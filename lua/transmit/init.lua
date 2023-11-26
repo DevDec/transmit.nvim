@@ -1,7 +1,7 @@
 local M = {}
 
 M.send_file = function ()
-    vim.print("hello this is a test")
+    fn.jobstart({ "sftp", '/', '/' })
 end
 
 return M;
