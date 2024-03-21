@@ -1,0 +1,2 @@
+-mkdir lua/transmit
+put -r /Volumes/T7/transmit.nvim.git/main/lua/transmit/init.lua lua/transmit/init.lua
