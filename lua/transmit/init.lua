@@ -1,34 +1,12 @@
 local sftp = require("transmit.sftp")
+local events = require("transmit.events")
+local util = require("transmit.util")
 
 local transmit = {}
 local closing_keys = {'<Esc>'}
 
-function transmit.send_file()
-    local file = vim.api.nvim_buf_get_name(0)
-    local working_dir = vim.loop.cwd()
-
-    local processes = sftp.generate_upload_proceses(file, working_dir)
-
-    sftp.add_to_queue("connect", "", "", {})
-
-    sftp.add_to_queue("upload", file, working_dir, processes)
-
-    sftp.start_sftp_connection()
-
---     local f = io.open(file, "r")
---     local file_exists =  f ~= nil and io.close(f)
---     if file_exists == false then
---         -- TODO: Implement deleting remote files, this is slightly more complicated so I'm not going to address this just yet.
---         delete_remote_file(chanid, relative_path)
---     else
---         upload_file(chanid, relative_path)
---     end
-
-    -- vim.fn.chansend(chanid, 'exit \n')
-end
-
 function transmit.open_select_window()
-  local buf = vim.api.nvim_create_buf(false, true)
+    local buf = vim.api.nvim_create_buf(false, true)
 
     local width = 40
     local height = 10
@@ -36,11 +14,11 @@ function transmit.open_select_window()
     local ui_list = vim.api.nvim_list_uis()
     local ui_iter = pairs(ui_list)
 
-    local current_key, current_value = ui_iter(ui_list)
+    local current_key, _ = ui_iter(ui_list)
 
     local ui = ui_list[current_key]
 
-    for k,v in pairs(closing_keys) do
+    for _,v in pairs(closing_keys) do
         vim.api.nvim_buf_set_keymap(buf, 'n', v, ':close<CR>', {})
     end
 
@@ -56,7 +34,9 @@ function transmit.open_select_window()
         border = "single"
     }
 
-    local sftp_servers = {}
+    local sftp_servers = {
+        "none"
+    }
 
     for key, _ in pairs(sftp.server_config) do
          table.insert(sftp_servers, key)
@@ -72,18 +52,55 @@ function transmit.open_select_window()
         vim.api.nvim_buf_set_keymap(buf, 'n', v, ':close<CR>', {})
     end
 end
-
 function transmit.setup(config)
     if next(config) == nil then
-        return
+        return false
     end
 
-    sftp.server_config = config
+    if config.watch_for_changes ~= nil and config.watch_for_changes == true then
+        vim.cmd([[
+            augroup TransmitAutoCommands
+            " autocmd!
+            " autocmd BufWritePost * lua require("transmit").upload_file()
+            autocmd!
+            autocmd DirChanged * lua require('transmit').watch_current_working_directory()
+            augroup END
+        ]])
+
+        transmit.watch_current_working_directory()
+    elseif config.upload_on_bufwrite ~= nil then
+        vim.cmd([[
+            augroup TransmitAutoCommands
+            autocmd!
+            autocmd BufWritePost * lua require("transmit").upload_file()
+            augroup END
+        ]])
+    end
+
+    vim.cmd('command TransmitOpenSelectWindow lua require("transmit").open_select_window()')
+    vim.cmd('command TransmitUploadGitModifiedFiles lua require("transmit").upload_git_modified_files()')
+    vim.cmd('command TransmitUpload lua require("transmit").upload_file()')
+    vim.cmd('command TransmitRemove lua require("transmit").remove_path()')
+
+    sftp.parse_sftp_config(config.config_location)
+end
+
+function transmit.get_current_server()
+    return sftp.get_current_server(vim.loop.cwd())
 end
 
 function transmit.select_server()
     local idx = vim.fn.line(".")
     local new_buf = vim.api.nvim_create_buf(false, true)
+
+    if idx == 1 then
+        sftp.update_transmit_server_config('none', nil)
+        vim.api.nvim_command(':close')
+
+        return true
+    end
+
+    idx = idx - 1
 
     local width = 40
     local height = 10
@@ -148,6 +165,62 @@ function transmit.select_remote(server_name)
     -- close both windows
     vim.api.nvim_command(':close')
     vim.api.nvim_command(':close')
+end
+
+function transmit.upload_git_modified_files()
+    local working_dir = vim.loop.cwd()
+
+    local changed_files = {}
+
+    vim.fn.jobstart(
+    {
+        'git',
+        'ls-files',
+        '--modified'
+    },
+    {
+        on_stdout = function(_, data, _)
+            for k,value in pairs(data) do
+                if value == nil or value == '' then
+                    goto continue
+                end
+
+                table.insert(changed_files, value)
+                ::continue::
+            end
+        end,
+        on_exit = function(_, code, _)
+            if changed_files == nil or next(changed_files) == nil then
+                return false
+            end
+
+            for k, file in pairs(changed_files) do
+                file = working_dir .. '/' .. file
+                transmit.upload_file(file)
+            end
+        end
+    })
+end
+
+function transmit.watch_current_working_directory()
+    if sftp.server_config[transmit.get_current_server()] == nil or sftp.server_config[transmit.get_current_server()] == 'none' then
+        return false
+    end
+
+    if sftp.server_config[transmit.get_current_server()]["watch_for_changes"] == nil or sftp.server_config[transmit.get_current_server()]['watch_for_changes'] == false then
+        return false
+    end
+
+    events.watch_directory_for_changes(vim.loop.cwd())
+end
+
+function transmit.remove_path(path)
+    util.remove_path(path)
+
+end
+
+function transmit.upload_file(file)
+    util.upload_file(file)
 end
 
 return transmit;
