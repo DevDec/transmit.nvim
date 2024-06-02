@@ -205,11 +205,19 @@ local function process_next_queue_item(chanid, data)
                 vim.print("Uploading file: " .. current_queue_item["filename"] .. " succeeded.")
             end
 
+            if current_queue_item["type"] == "remove" and string.find(next_queue_process["process"], "rm") then
+                vim.print("Removing file: " .. current_queue_item["filename"] .. " succeeded.")
+            end
+
             update_current_process_status(true)
         elseif next_queue_process["status"] == false and string.find(v, next_queue_process["finished_response"]) then
             if current_queue_item["type"] == "upload" and string.find(next_queue_process["process"], "put") then
                 vim.print("Uploading file: " .. current_queue_item["filename"] .. " succeeded.")
             end
+
+			if current_queue_item["type"] == "remove" and string.find(next_queue_process["process"], "rm") then
+				vim.print("Removing file: " .. current_queue_item["filename"] .. " succeeded.")
+			end
 
             reset_current_process()
             next_queue_process = get_next_queue_process()
@@ -247,11 +255,17 @@ local function on_sftp_event(chanid, data)
     process_next_queue_item(chanid, data)
 end
 
+local function escapePattern(str)
+    local specialCharacters = "([%.%+%-%%%[%]%*%?%^%$%(%)])"
+    return (str:gsub(specialCharacters, "%%%1"))
+end
+
 function sftp.generate_upload_proceses(file, working_dir)
     local current_config = get_sftp_server_config()
     local current_transmit_data = get_transmit_data()
 
-    local relative_path =  string.gsub(file, working_dir, '')
+    local relative_path =  string.gsub(file, escapePattern(working_dir), '')
+
     local selected_remote = current_transmit_data[working_dir]['remote']
     local remote_path = current_config['remotes'][selected_remote]
 
@@ -262,39 +276,49 @@ function sftp.generate_upload_proceses(file, working_dir)
         end
     end
 
-    local put_script = ""
+	if directory_path ~= "" then
+		if string.sub(directory_path, 1, 1) == '/' then
+			directory_path = string.sub(directory_path, 2)
+		end
 
-    if directory_path ~= "" then
-        if string.sub(directory_path, 1, 1) == '/' then
-            directory_path = string.sub(directory_path, 2)
-        end
+		if string.sub(relative_path, 1, 1) == '/' then
+			relative_path = string.sub(relative_path, 2)
+		end
 
-        if string.sub(relative_path, 1, 1) == '/' then
-            relative_path = string.sub(relative_path, 2)
-        end
+		local make_dir = 'mkdir -p ' .. directory_path .. " \n"
+		if string.sub(relative_path, 1, 1) == '/' then
+			relative_path = string.sub(relative_path, 2)
+		end
 
-        put_script = "put " .. file .. " -o " .. relative_path .. " \n"
-        local make_dir = 'mkdir -p ' .. directory_path .. " \n"
-        if string.sub(relative_path, 1, 1) == '/' then
-            relative_path = string.sub(relative_path, 2)
-        end
+		local put_script = "put " .. file .. " -o " .. relative_path .. " \n"
 
-        local put_script = "put " .. file .. " -o " .. relative_path .. " \n"
-        return {
-            {
-                success_response = 'bytes transferred',
-                process = put_script,
-                failed_responses = {
-                    'failed',
-                    'No such file or directory'
-                },
-                finished_response = 'lftp ' .. current_config.credentials.username .. '@' .. current_config.credentials.host .. ':/' .. remote_path,
-                status = false,
-                accepts_failures = false,
-                forceFinished = false
-            }
-        }
-    end
+		return {
+			-- {
+			-- 	process = make_dir,
+			-- 	success_response = 'mkdir ok',
+			-- 	finished_response = 'lftp ' .. current_config.credentials.username .. '@' .. current_config.credentials.host .. ':/' .. remote_path,
+			-- 	failed_responses = {
+			-- 		'failed',
+			-- 		'No such file or directory'
+			-- 	},
+			-- 	status = false,
+			-- 	accepts_failures = true,
+			-- 	forceFinished = true
+			-- },
+			{
+				success_response = 'bytes transferred',
+				process = put_script,
+				failed_responses = {
+					'failed',
+					'No such file or directory'
+				},
+				finished_response = 'lftp ' .. current_config.credentials.username .. '@' .. current_config.credentials.host .. ':/' .. remote_path,
+				status = false,
+				accepts_failures = false,
+				forceFinished = false
+			}
+		}
+	end
 
     if string.sub(relative_path, 1, 1) == '/' then
         relative_path = string.sub(relative_path, 2)
@@ -348,7 +372,8 @@ function sftp.generate_remove_proceses(path, working_dir)
     local selected_remote = current_transmit_data[working_dir]['remote']
     local remote_path = current_config['remotes'][selected_remote]
 
-    local relative_path =  string.gsub(path, working_dir, '')
+
+	local relative_path =  string.gsub(path, escapePattern(working_dir), '')
 
     if string.sub(relative_path, 1, 1) == '/' then
         relative_path = string.sub(relative_path, 2)

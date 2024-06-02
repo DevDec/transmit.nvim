@@ -57,6 +57,8 @@ function transmit.setup(config)
         return false
     end
 
+	sftp.parse_sftp_config(config.config_location)
+
     if config.watch_for_changes ~= nil and config.watch_for_changes == true then
         vim.cmd([[
             augroup TransmitAutoCommands
@@ -78,11 +80,8 @@ function transmit.setup(config)
     end
 
     vim.cmd('command TransmitOpenSelectWindow lua require("transmit").open_select_window()')
-    vim.cmd('command TransmitUploadGitModifiedFiles lua require("transmit").upload_git_modified_files()')
     vim.cmd('command TransmitUpload lua require("transmit").upload_file()')
     vim.cmd('command TransmitRemove lua require("transmit").remove_path()')
-
-    sftp.parse_sftp_config(config.config_location)
 end
 
 function transmit.get_current_server()
@@ -167,40 +166,7 @@ function transmit.select_remote(server_name)
     vim.api.nvim_command(':close')
 end
 
-function transmit.upload_git_modified_files()
-    local working_dir = vim.loop.cwd()
 
-    local changed_files = {}
-
-    vim.fn.jobstart(
-    {
-        'git',
-        'ls-files',
-        '--modified'
-    },
-    {
-        on_stdout = function(_, data, _)
-            for k,value in pairs(data) do
-                if value == nil or value == '' then
-                    goto continue
-                end
-
-                table.insert(changed_files, value)
-                ::continue::
-            end
-        end,
-        on_exit = function(_, code, _)
-            if changed_files == nil or next(changed_files) == nil then
-                return false
-            end
-
-            for k, file in pairs(changed_files) do
-                file = working_dir .. '/' .. file
-                transmit.upload_file(file)
-            end
-        end
-    })
-end
 
 function transmit.watch_current_working_directory()
     if sftp.server_config[transmit.get_current_server()] == nil or sftp.server_config[transmit.get_current_server()] == 'none' then
