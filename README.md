@@ -1,3 +1,7 @@
+# Transmit.nvim
+[![Lua](https://img.shields.io/badge/Lua-blue.svg?style=for-the-badge&logo=lua)](http://www.lua.org)
+[![Neovim](https://img.shields.io/badge/Neovim%200.5+-green.svg?style=for-the-badge&logo=neovim)](https://neovim.io)
+
 transmit.nvim is a neovim lftp wrapper written in Lua that provides SFTP functionality for uploading and removing files from remote servers
 
 ## Predefined neovim commands
@@ -78,9 +82,10 @@ Each root key of the json table is a user defined name for the sftp server you a
 Each SFTP server json table has the following options:
 
 `credentials` - takes a json table with the following options:
-	- `host` - sftp server host ip to connect to
-	- `username` - sftp username
-	- `identity_file` - ssh private key to use as password
+- `host` - sftp server host ip to connect to
+- `username` - sftp username
+- `identity_file` - ssh private key to use as password<br><br>
+
 `remotes` - takes a json table with user defined keys, these keys will be used by the select window to pick a remote directory to upload to, the values of the remotes should match a directory on the sftp server you want to upload to
 
 Example json config file:
