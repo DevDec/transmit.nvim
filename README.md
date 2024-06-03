@@ -6,9 +6,10 @@ transmit.nvim is a neovim lftp wrapper written in Lua that provides SFTP functio
 
 ## Predefined neovim commands
 
-`TransmitOpenSelectWindow` - Opens a popup buffer to select an sftp server and a remote for the current working directory
-`TransmitRemove` - Removes the currently open file from the selected remote
-`TransmitUpload` - Uploads the current file to the selected remote
+- `TransmitOpenSelectWindow` - Opens a popup buffer to select an sftp server and a remote for the current working directory
+- `TransmitRemove` - Removes the currently open file from the selected remote
+- `TransmitUpload` - Uploads the current file to the selected remote
+
 ## Dependencies
 
 - https://lftp.yar.ru/
