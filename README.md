@@ -40,32 +40,32 @@ Example using lazy package manager
 Call the setup function from transmit:
 
 ```console
-	local transmit = require('transmit')
-		transmit.setup({
-		config_location = "/home/declanb/transmit_sftp/config.json",
-		upload_on_bufwrite = true
-	})
+local transmit = require('transmit')
+	transmit.setup({
+	config_location = "/home/declanb/transmit_sftp/config.json",
+	upload_on_bufwrite = true
+})
 ```
 
 For lazy package manager this can be done in the config callback:
 
 ```console
-	{
-		'DevDec/transmit.nvim',
-		config = function()
-			local transmit = require('transmit')
-				transmit.setup({
-				config_location = "/home/declanb/transmit_sftp/config.json", 
-				upload_on_bufwrite = true
-			})
-		end
-	}
+{
+	'DevDec/transmit.nvim',
+	config = function()
+		local transmit = require('transmit')
+			transmit.setup({
+			config_location = "/home/declanb/transmit_sftp/config.json", 
+			upload_on_bufwrite = true
+		})
+	end
+}
 ```
 
 #### Setup function options
 
-`config_location` - Path to local json sftp config file (used to define sftp servers) <a name="config-location"></a>
-`upload_on_bufwrite` - boolean, if true writing a file will automatically upload it to the currently selected sftp server/remote
+- `config_location` - Path to local json sftp config file (used to define sftp servers) <a name="config-location"></a>
+- `upload_on_bufwrite` - boolean, if true writing a file will automatically upload it to the currently selected sftp server/remote
 
 ### SFTP Server config <a name="sftp-server-config"></a>
 
