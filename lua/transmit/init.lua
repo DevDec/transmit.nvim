@@ -52,10 +52,15 @@ function transmit.open_select_window()
         vim.api.nvim_buf_set_keymap(buf, 'n', v, ':close<CR>', {})
     end
 end
+
 function transmit.setup(config)
     if next(config) == nil then
         return false
     end
+
+	vim.cmd('command TransmitOpenSelectWindow lua require("transmit").open_select_window()')
+	vim.cmd('command TransmitUpload lua require("transmit").upload_file()')
+	vim.cmd('command TransmitRemove lua require("transmit").remove_path()')
 
 	sftp.parse_sftp_config(config.config_location)
 
@@ -76,10 +81,9 @@ function transmit.setup(config)
         ]])
     end
 
-    vim.cmd('command TransmitOpenSelectWindow lua require("transmit").open_select_window()')
-    vim.cmd('command TransmitUpload lua require("transmit").upload_file()')
-    vim.cmd('command TransmitRemove lua require("transmit").remove_path()')
-end
+	vim.print('got here')
+
+    end
 
 function transmit.get_current_server()
     return sftp.get_current_server(vim.loop.cwd())
