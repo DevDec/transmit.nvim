@@ -1,6 +1,19 @@
 local sftp = require('transmit.sftp')
 local util = {}
 
+-- function util.create_directory(path, working_dir)
+-- 	if working_dir == nil then
+-- 		working_dir = vim.loop.cwd()
+-- 	end
+--
+-- 	if sftp.working_dir_has_active_sftp_selection(working_dir) == false then
+-- 		return false
+-- 	end
+--
+-- 	local create_processes = sftp.generate_create_dir(path, working_dir)
+-- 	sftp.add_to_queue("create_dir", path, working_dir, create_processes)
+-- end
+
 function util.remove_path(path, working_dir)
     if path == nil then
         path = vim.api.nvim_buf_get_name(0)

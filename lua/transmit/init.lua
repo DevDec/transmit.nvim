@@ -59,18 +59,15 @@ function transmit.setup(config)
 
 	sftp.parse_sftp_config(config.config_location)
 
-    if config.watch_for_changes ~= nil and config.watch_for_changes == true then
-        vim.cmd([[
-            augroup TransmitAutoCommands
-            " autocmd!
-            " autocmd BufWritePost * lua require("transmit").upload_file()
-            autocmd!
-            autocmd DirChanged * lua require('transmit').watch_current_working_directory()
-            augroup END
-        ]])
+	local server_config = sftp.get_sftp_server_config()
 
-        transmit.watch_current_working_directory()
-    elseif config.upload_on_bufwrite ~= nil then
+	if server_config == nil or server_config == false then
+		return false
+	end
+
+    if server_config.watch_for_changes ~= nil and server_config.watch_for_changes == true then
+		transmit.watch_current_working_directory()
+    elseif server_config.upload_on_bufwrite ~= nil then
         vim.cmd([[
             augroup TransmitAutoCommands
             autocmd!
@@ -86,6 +83,10 @@ end
 
 function transmit.get_current_server()
     return sftp.get_current_server(vim.loop.cwd())
+end
+
+function transmit.get_server(directory)
+	return sftp.get_current_server(directory)
 end
 
 function transmit.select_server()
@@ -164,9 +165,27 @@ function transmit.select_remote(server_name)
     -- close both windows
     vim.api.nvim_command(':close')
     vim.api.nvim_command(':close')
+
+	local server_config = sftp.get_sftp_server_config()
+
+    if server_config.watch_for_changes ~= nil and server_config.watch_for_changes == true then
+		transmit.watch_current_working_directory()
+	end
 end
 
+function transmit.watch_directory(directory)
+	if sftp.server_config[transmit.get_server(directory)] == nil or sftp.server_config[transmit.get_server(directory)] == 'none' then
+		return false
+	end
 
+	if sftp.server_config[transmit.get_server(directory)]["watch_for_changes"] == nil or sftp.server_config[transmit.get_server(directory)]['watch_for_changes'] == false then
+		return false
+	end
+
+	local excluded = sftp.server_config[transmit.get_server(directory)]['exclude_watch_directories'] or {}
+
+	events.watch_directory_for_changes(directory, excluded)
+end
 
 function transmit.watch_current_working_directory()
     if sftp.server_config[transmit.get_current_server()] == nil or sftp.server_config[transmit.get_current_server()] == 'none' then
@@ -177,16 +196,25 @@ function transmit.watch_current_working_directory()
         return false
     end
 
-    events.watch_directory_for_changes(vim.loop.cwd())
+	local excluded = sftp.server_config[transmit.get_current_server()]['exclude_watch_directories'] or {}
+
+    events.watch_directory_for_changes(vim.loop.cwd(), excluded)
 end
 
 function transmit.remove_path(path)
     util.remove_path(path)
-
 end
 
 function transmit.upload_file(file)
     util.upload_file(file)
+end
+
+function transmit.remove_watch(directory)
+	if (directory == nil) then
+		events.remove_all_watchers()
+	else 
+		events.remove_all_watches_for_root(directory)
+	end
 end
 
 return transmit;

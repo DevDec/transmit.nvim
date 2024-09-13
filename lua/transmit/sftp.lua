@@ -10,11 +10,16 @@ sftp.server_config = {}
 
 local transmit_server_data = string.format("%s/transmit.json", data_path)
 
-function sftp.has_active_queue()
-    return next(queue) ~= nil
+sftp.has_active_queue = function()
+	return next(queue) ~= nil
 end
 
+-- function sftp.has_active_queue()
+--     return next(queue) ~= nil
+-- end
+
 local function get_current_queue_item()
+
     local iter = pairs(queue)
 
     local current_key, _ = iter(queue)
@@ -116,7 +121,7 @@ function sftp.parse_sftp_config(config_location)
     sftp.server_config = vim.json.decode(sftp_config_data)
 end
 
-local function get_sftp_server_config()
+function sftp.get_sftp_server_config()
     local selected_server = get_selected_server()
 
     if selected_server == false then
@@ -169,7 +174,7 @@ local function process_next_queue_item(chanid, data)
             goto continue
         end
 
-        local current_config = get_sftp_server_config()
+        local current_config = sftp.get_sftp_server_config()
 
         if current_queue_item.type == "connect" and string.find(v, 'lftp ' .. current_config.credentials.username .. '@' .. current_config.credentials.host .. ':~>') then
             local next_queue_process = get_next_queue_process()
@@ -261,7 +266,7 @@ local function escapePattern(str)
 end
 
 function sftp.generate_upload_proceses(file, working_dir)
-    local current_config = get_sftp_server_config()
+    local current_config = sftp.get_sftp_server_config()
     local current_transmit_data = get_transmit_data()
 
     local relative_path =  string.gsub(file, escapePattern(working_dir), '')
@@ -343,7 +348,7 @@ function sftp.generate_upload_proceses(file, working_dir)
 end
 
 function sftp.generate_connect_proceses(working_dir)
-    local current_config = get_sftp_server_config()
+    local current_config = sftp.get_sftp_server_config()
     local current_transmit_data = get_transmit_data()
 
     local selected_remote = current_transmit_data[working_dir]['remote']
@@ -366,7 +371,7 @@ function sftp.generate_connect_proceses(working_dir)
 end
 
 function sftp.generate_remove_proceses(path, working_dir)
-    local current_config = get_sftp_server_config()
+    local current_config = sftp.get_sftp_server_config()
     local current_transmit_data = get_transmit_data()
 
     local selected_remote = current_transmit_data[working_dir]['remote']
@@ -418,7 +423,7 @@ function sftp.add_to_queue(type, filename, working_dir, processes)
 end
 
 function sftp.start_connection()
-    local config = get_sftp_server_config()
+    local config = sftp.get_sftp_server_config()
 
     local host = config.credentials.host
     local username = config.credentials.username
