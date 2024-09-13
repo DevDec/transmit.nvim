@@ -1,7 +1,22 @@
-local util = require('transmit.util')
-local events = {}
+local Util = require('transmit.util')
 
-events.watching = {}
+---@class Events
+---@field watching table
+---@field sftp TransmitSftp
+local Events = {}
+
+Events.__index = Events
+
+function Events:new(sftp)
+	local events = setmetatable({
+		watching = {},
+		sftp = sftp,
+	}, Events)
+
+	Util:new(sftp)
+
+	return events
+end
 
 local function isExcludedDirectory(directory, excluded_directories)
 	for _, excluded in ipairs(excluded_directories) do
@@ -11,28 +26,6 @@ local function isExcludedDirectory(directory, excluded_directories)
 	end
 
     return false
-end
-
-local function stringify_table(tbl)
-    local result = "{"
-    for k, v in pairs(tbl) do
-        -- Handle key formatting
-        if type(k) == "string" then
-            k = '"' .. k .. '"'
-        end
-        
-        -- Handle value formatting based on its type
-        if type(v) == "table" then
-            v = stringify_table(v)  -- Recursively handle nested tables
-        elseif type(v) == "string" then
-            v = '"' .. v .. '"'
-        else
-            v = tostring(v)
-        end
-        
-        result = result .. "[" .. k .. "]=" .. v .. ","
-    end
-    return result .. "}"
 end
 
 local function on_change(path, directory, excluded_directories)
@@ -57,21 +50,21 @@ local function on_change(path, directory, excluded_directories)
 
 
 	-- if file_exists and isDirectory then
-		-- util.create_directory(path, directory)
+		-- Util.create_directory(path, directory)
 
-		-- events.watch_directory_for_changes(path, excluded_directories)
+		-- Events:watch_directory_for_changes(path, excluded_directories)
 	-- end
 
 	-- TODO: Check if file is a directory, if it is then check if its being watched, if not then watch it
-	-- If it is a directory then util.create_directory or util.remove_directory instead
+	-- If it is a directory then Util.create_directory or util.remove_directory instead
 
     if file_exists == false then
         vim.schedule(function()
-            util.remove_path(path, directory)
+            Util.remove_path(path, directory)
         end)
     else
         vim.schedule(function()
-            util.upload_file(path, directory)
+            Util.upload_file(path, directory)
         end)
 	end
 end
@@ -83,33 +76,33 @@ end
 local remove_watch = function(dir, handle_event)
 	local uv = vim.uv;
 	uv.fs_event_stop(handle_event, handle_event)
-	events.watching[dir] = nil
+	Events.watching[dir] = nil
 end
 
-function events.remove_all_watchers()
+function Events:remove_all_watchers()
 	local uv = vim.uv;
-	for rootDirectory, _ in pairs(events.watching) do
-		for dir, handle_event in pairs(events.watching[rootDirectory]) do
+	for rootDirectory, _ in pairs(self.watching) do
+		for dir, handle_event in pairs(self.watching[rootDirectory]) do
 			uv.fs_event_stop(handle_event, handle_event)
-			events.watching[rootDirectory][dir] = nil
+			self.watching[rootDirectory][dir] = nil
 		end
 	end
 end
 
-function events.remove_all_watchers_for_root(rootDirectory)
+function Events:remove_all_watchers_for_root(rootDirectory)
 	local uv = vim.uv;
-	if events.watching[rootDirectory] == nil then
+	if self.watching[rootDirectory] == nil then
 		return
 	end
 
-	for dir, handle_event in pairs(events.watching[rootDirectory]) do
+	for dir, handle_event in pairs(self.watching[rootDirectory]) do
 		uv.fs_event_stop(handle_event, handle_event)
-		events.watching[rootDirectory][dir] = nil
+		self.watching[rootDirectory][dir] = nil
 	end
 end
 
-function events.watch_directory_for_changes(directory, excluded_directories)
-	if events.watching[directory] ~= nil then
+function Events:watch_directory_for_changes(directory, excluded_directories)
+	if self.watching[directory] ~= nil then
 		return
 	end
 
@@ -140,7 +133,7 @@ function events.watch_directory_for_changes(directory, excluded_directories)
 		end
 
 		local handle_event = uv.new_fs_event()
-		if events.watching[dir] ~= nil then
+		if self.watching[dir] ~= nil then
 			uv.fs_event_stop(handle_event, handle_event)
 		end
 
@@ -154,9 +147,9 @@ function events.watch_directory_for_changes(directory, excluded_directories)
 
 		uv.fs_event_start(handle_event, dir, flags, callback)
 
-		events.watching[directory] = events.watching[directory] or {}
+		self.watching[directory] = self.watching[directory] or {}
 
-		events.watching[directory][dir] = handle_event
+		self.watching[directory][dir] = handle_event
 
 		::continue::
 	end
@@ -164,4 +157,4 @@ function events.watch_directory_for_changes(directory, excluded_directories)
 	p:close()
 end
 
-return events
+return Events

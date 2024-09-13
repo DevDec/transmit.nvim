@@ -1,30 +1,73 @@
 local data_path = vim.fn.stdpath("data")
 local Path = require("plenary.path")
-local Job = require('plenary.job')
 
-local sftp = {}
+---@class TransmitQueueItem
+---@field type string
+---@field filename string
+---@field working_dir string
+
+---@class SftpCredentials
+---@field host string
+---@field username string
+---@field identity_file string
+
+---@class SftpServer
+---@field credentials SftpCredentials
+---@field remotes table<string, string>
+---@field watch_for_changes boolean
+---@field upload_on_bufwrite boolean
+
+---@class SftpConfig
+---@field servers table<string, SftpServer>
+
+---@class TransmitSftp
+---@field server_config SftpConfig
+local TransmitSftp = {}
+TransmitSftp.__index = TransmitSftp
+
+---@param server_config SftpConfig
+function TransmitSftp:new(server_config)
+	local sftp = setmetatable({
+		server_config = server_config,
+	}, TransmitSftp)
+
+	return sftp
+end
 
 local queue = {}
 
-sftp.server_config = {}
-
 local transmit_server_data = string.format("%s/transmit.json", data_path)
 
-sftp.has_active_queue = function()
-	return next(queue) ~= nil
+local function get_transmit_data()
+    local path = Path:new(transmit_server_data)
+    local exists = path:exists()
+
+    if not exists then
+        path:write('{}', 'w')
+    end
+
+    local transmit_data = path:read()
+
+    return vim.json.decode(transmit_data)
 end
 
--- function sftp.has_active_queue()
---     return next(queue) ~= nil
--- end
+local function get_selected_server()
+    local current_transmit_data = get_transmit_data()
+    local working_dir = vim.loop.cwd()
+
+    if current_transmit_data[working_dir] == nil or current_transmit_data[working_dir]['server_name'] == nil or current_transmit_data[working_dir] == nil then
+        return false
+    end
+
+    return current_transmit_data[working_dir]['server_name']
+end
+
 
 local function get_current_queue_item()
-
     local iter = pairs(queue)
-
     local current_key, _ = iter(queue)
 
-    if queue[current_key] == nil then
+    if not queue[current_key] then
         return false
     end
 
@@ -34,21 +77,20 @@ end
 local function get_next_queue_process()
     local current_queue_item = get_current_queue_item()
 
-    if current_queue_item == nil or current_queue_item == false then
+    if not current_queue_item then
         return false
     end
 
     local processes_iter = pairs(current_queue_item.processes)
     local processes_key, _ = processes_iter(current_queue_item.processes)
 
-    if current_queue_item.processes[processes_key] == nil then
+    if not current_queue_item.processes[processes_key] then
         current_queue_item.processes = nil
 
         local iter = pairs(queue)
-
         local current_key, _ = iter(queue)
 
-        if queue[current_key] == nil then
+        if not queue[current_key] then
             return false
         end
 
@@ -84,70 +126,6 @@ local function update_current_process_status(status, forceFinished)
     end
 end
 
-local function get_transmit_data()
-    local path = Path:new(transmit_server_data)
-    local exists = path:exists()
-
-    if not exists then
-        path:write('{}', 'w')
-    end
-
-    local transmit_data = path:read()
-
-    return vim.json.decode(transmit_data)
-end
-
-local function get_selected_server()
-    local current_transmit_data = get_transmit_data()
-    local working_dir = vim.loop.cwd()
-
-    if current_transmit_data[working_dir] == nil or current_transmit_data[working_dir]['server_name'] == nil or current_transmit_data[working_dir] == nil then
-        return false
-    end
-
-    return current_transmit_data[working_dir]['server_name']
-end
-
-function sftp.parse_sftp_config(config_location)
-    local path = Path:new(config_location)
-    local exists = path:exists()
-
-    if not exists then
-        return false
-    end
-
-    local sftp_config_data = path:read()
-
-    sftp.server_config = vim.json.decode(sftp_config_data)
-end
-
-function sftp.get_sftp_server_config()
-    local selected_server = get_selected_server()
-
-    if selected_server == false then
-        return false
-    end
-
-    return sftp.server_config[selected_server]
-end
-
-function sftp.update_transmit_server_config(server_name, remote)
-    local working_dir = vim.loop.cwd()
-    local current_transmit_data = get_transmit_data()
-
-    if server_name == 'none' then
-        current_transmit_data[working_dir] = nil
-    elseif current_transmit_data[working_dir] == nil then
-        current_transmit_data[working_dir] = {}
-        current_transmit_data[working_dir]["server_name"] = server_name
-        current_transmit_data[working_dir]["remote"] = remote
-    else
-        current_transmit_data[working_dir]["server_name"] = server_name
-        current_transmit_data[working_dir]["remote"] = remote
-    end
-
-    Path:new(transmit_server_data):write(vim.json.encode(current_transmit_data), "w")
-end
 
 local function process_next_queue_item(chanid, data)
     local current_queue_item = get_current_queue_item()
@@ -162,22 +140,30 @@ local function process_next_queue_item(chanid, data)
         return true
     end
 
-    if current_queue_item == nil or current_queue_item == false then
+    if not current_queue_item then
         queue = {}
         vim.fn.chansend(chanid, 'exit\n')
 
         return false
     end
 
-    for k,v in pairs(data) do
+    for _,v in pairs(data) do
         if v == nil then
             goto continue
         end
 
-        local current_config = sftp.get_sftp_server_config()
+        local current_config = TransmitSftp:get_sftp_server_config()
+
+		if not current_config then
+			return false
+		end
 
         if current_queue_item.type == "connect" and string.find(v, 'lftp ' .. current_config.credentials.username .. '@' .. current_config.credentials.host .. ':~>') then
             local next_queue_process = get_next_queue_process()
+			if not next_queue_process then
+				return false
+			end
+
             vim.print("Connected to server: " .. current_config.credentials.host)
             vim.fn.chansend(chanid, next_queue_process["process"])
             return true
@@ -185,7 +171,7 @@ local function process_next_queue_item(chanid, data)
 
         local next_queue_process = get_next_queue_process()
 
-        if next_queue_process == false then
+        if not next_queue_process then
             queue = {}
             vim.fn.chansend(chanid, 'exit\n')
             return false
@@ -195,7 +181,7 @@ local function process_next_queue_item(chanid, data)
             reset_current_process()
             next_queue_process = get_next_queue_process()
 
-            if next_queue_process == false then
+            if not next_queue_process then
                 queue = {}
                 vim.fn.chansend(chanid, 'exit\n')
                 return false
@@ -227,7 +213,7 @@ local function process_next_queue_item(chanid, data)
             reset_current_process()
             next_queue_process = get_next_queue_process()
 
-            if next_queue_process == false then
+            if not next_queue_process then
                 queue = {}
                 vim.fn.chansend(chanid, 'exit\n')
                 return false
@@ -265,8 +251,13 @@ local function escapePattern(str)
     return (str:gsub(specialCharacters, "%%%1"))
 end
 
-function sftp.generate_upload_proceses(file, working_dir)
-    local current_config = sftp.get_sftp_server_config()
+function TransmitSftp:generate_upload_proceses(file, working_dir)
+    local current_config = self:get_sftp_server_config()
+
+	if not current_config then
+		return false
+	end
+
     local current_transmit_data = get_transmit_data()
 
     local relative_path =  string.gsub(file, escapePattern(working_dir), '')
@@ -290,7 +281,6 @@ function sftp.generate_upload_proceses(file, working_dir)
 			relative_path = string.sub(relative_path, 2)
 		end
 
-		local make_dir = 'mkdir -p ' .. directory_path .. " \n"
 		if string.sub(relative_path, 1, 1) == '/' then
 			relative_path = string.sub(relative_path, 2)
 		end
@@ -298,18 +288,6 @@ function sftp.generate_upload_proceses(file, working_dir)
 		local put_script = "put " .. file .. " -o " .. relative_path .. " \n"
 
 		return {
-			-- {
-			-- 	process = make_dir,
-			-- 	success_response = 'mkdir ok',
-			-- 	finished_response = 'lftp ' .. current_config.credentials.username .. '@' .. current_config.credentials.host .. ':/' .. remote_path,
-			-- 	failed_responses = {
-			-- 		'failed',
-			-- 		'No such file or directory'
-			-- 	},
-			-- 	status = false,
-			-- 	accepts_failures = true,
-			-- 	forceFinished = true
-			-- },
 			{
 				success_response = 'bytes transferred',
 				process = put_script,
@@ -347,8 +325,62 @@ function sftp.generate_upload_proceses(file, working_dir)
     }
 end
 
-function sftp.generate_connect_proceses(working_dir)
-    local current_config = sftp.get_sftp_server_config()
+
+
+function TransmitSftp:has_active_queue()
+	return next(queue) ~= nil
+end
+
+function TransmitSftp:parse_sftp_config(config_location)
+    local path = Path:new(config_location)
+    local exists = path:exists()
+
+    if not exists then
+        return false
+    end
+
+    local sftp_config_data = path:read()
+
+	TransmitSftp:new(vim.json.decode(sftp_config_data))
+end
+
+
+function TransmitSftp:get_sftp_server_config()
+    local selected_server = get_selected_server()
+
+    if selected_server == false then
+        return false
+    end
+
+    return self.server_config[selected_server]
+end
+
+function TransmitSftp:update_transmit_server_config(server_name, remote)
+    local working_dir = vim.loop.cwd()
+    local current_transmit_data = get_transmit_data()
+
+    if server_name == 'none' then
+        current_transmit_data[working_dir] = nil
+    elseif current_transmit_data[working_dir] == nil then
+        current_transmit_data[working_dir] = {}
+        current_transmit_data[working_dir]["server_name"] = server_name
+        current_transmit_data[working_dir]["remote"] = remote
+    else
+        current_transmit_data[working_dir]["server_name"] = server_name
+        current_transmit_data[working_dir]["remote"] = remote
+    end
+
+    Path:new(transmit_server_data):write(vim.json.encode(current_transmit_data), "w")
+end
+
+
+function TransmitSftp:generate_connect_proceses(working_dir)
+    local current_config = self:get_sftp_server_config()
+
+	if not current_config then
+		return false
+	end
+
     local current_transmit_data = get_transmit_data()
 
     local selected_remote = current_transmit_data[working_dir]['remote']
@@ -370,8 +402,13 @@ function sftp.generate_connect_proceses(working_dir)
     }
 end
 
-function sftp.generate_remove_proceses(path, working_dir)
-    local current_config = sftp.get_sftp_server_config()
+function TransmitSftp:generate_remove_proceses(path, working_dir)
+    local current_config = self:get_sftp_server_config()
+
+	if not current_config then
+		return false
+	end
+
     local current_transmit_data = get_transmit_data()
 
     local selected_remote = current_transmit_data[working_dir]['remote']
@@ -400,12 +437,12 @@ function sftp.generate_remove_proceses(path, working_dir)
     }
 end
 
-function sftp.add_to_queue(type, filename, working_dir, processes)
+function TransmitSftp:add_to_queue(type, filename, working_dir, processes)
     local start_queue = false
 
-    if sftp.has_active_queue() == false and type ~= "connect" then
-        local connect_processes = sftp.generate_connect_proceses(working_dir)
-        sftp.add_to_queue("connect", "", "", connect_processes)
+    if self:has_active_queue() == false and type ~= "connect" then
+        local connect_processes = self:generate_connect_proceses(working_dir)
+		self:add_to_queue("connect", "", "", connect_processes)
 
         start_queue = true
     end
@@ -418,22 +455,20 @@ function sftp.add_to_queue(type, filename, working_dir, processes)
     })
 
     if start_queue then
-        sftp.start_connection()
+        self:start_connection()
     end
 end
 
-function sftp.start_connection()
-    local config = sftp.get_sftp_server_config()
+function TransmitSftp:start_connection()
+    local config = self:get_sftp_server_config()
+
+	if not config then
+		return false
+	end
 
     local host = config.credentials.host
     local username = config.credentials.username
     local identity_file = config.credentials.identity_file
-
-    local uv = vim.loop
-
-    local stdin = uv.new_pipe(false)
-    local stdout = uv.new_pipe(false)
-    local stderr = uv.new_pipe(false)
 
     return vim.fn.jobstart(
         {
@@ -451,18 +486,18 @@ function sftp.start_connection()
     )
 end
 
-function sftp.working_dir_has_active_sftp_selection(working_dir)
+function TransmitSftp:working_dir_has_active_sftp_selection(working_dir)
     local current_transmit_data = get_transmit_data()
 
-    if current_transmit_data[working_dir] == nil or current_transmit_data[working_dir]['remote'] == nil then
+    if not current_transmit_data[working_dir] or not current_transmit_data[working_dir]['remote'] then
         return false
     end
 
     return true
 end
 
-function sftp.get_current_server(working_dir)
-    if sftp.working_dir_has_active_sftp_selection(working_dir) == false then
+function TransmitSftp:get_current_server(working_dir)
+    if not self:working_dir_has_active_sftp_selection(working_dir) then
         return 'none'
     end
 
@@ -470,4 +505,4 @@ function sftp.get_current_server(working_dir)
     return current_transmit_data[working_dir]["server_name"]
 end
 
-return sftp
+return TransmitSftp
