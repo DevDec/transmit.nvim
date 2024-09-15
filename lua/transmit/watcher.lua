@@ -1,7 +1,9 @@
 local util = require('transmit.util')
-local events = {}
+local sftp = require('transmit.sftp')
 
-events.watching = {}
+local watcher = {
+	watching = {}
+}
 
 local function isExcludedDirectory(directory, excluded_directories)
 	for _, excluded in ipairs(excluded_directories) do
@@ -11,28 +13,6 @@ local function isExcludedDirectory(directory, excluded_directories)
 	end
 
     return false
-end
-
-local function stringify_table(tbl)
-    local result = "{"
-    for k, v in pairs(tbl) do
-        -- Handle key formatting
-        if type(k) == "string" then
-            k = '"' .. k .. '"'
-        end
-        
-        -- Handle value formatting based on its type
-        if type(v) == "table" then
-            v = stringify_table(v)  -- Recursively handle nested tables
-        elseif type(v) == "string" then
-            v = '"' .. v .. '"'
-        else
-            v = tostring(v)
-        end
-        
-        result = result .. "[" .. k .. "]=" .. v .. ","
-    end
-    return result .. "}"
 end
 
 local function on_change(path, directory, excluded_directories)
@@ -59,7 +39,7 @@ local function on_change(path, directory, excluded_directories)
 	-- if file_exists and isDirectory then
 		-- util.create_directory(path, directory)
 
-		-- events.watch_directory_for_changes(path, excluded_directories)
+		-- watcher.watch_directory_for_changes(path, excluded_directories)
 	-- end
 
 	-- TODO: Check if file is a directory, if it is then check if its being watched, if not then watch it
@@ -83,35 +63,41 @@ end
 local remove_watch = function(dir, handle_event)
 	local uv = vim.uv;
 	uv.fs_event_stop(handle_event, handle_event)
-	events.watching[dir] = nil
+	watcher.watching[dir] = nil
 end
 
-function events.remove_all_watchers()
+function watcher.remove_all_watchers()
 	local uv = vim.uv;
-	for rootDirectory, _ in pairs(events.watching) do
-		for dir, handle_event in pairs(events.watching[rootDirectory]) do
+	for rootDirectory, _ in pairs(watcher.watching) do
+		for dir, handle_event in pairs(watcher.watching[rootDirectory]) do
 			uv.fs_event_stop(handle_event, handle_event)
-			events.watching[rootDirectory][dir] = nil
+			watcher.watching[rootDirectory][dir] = nil
 		end
 	end
 end
 
-function events.remove_all_watchers_for_root(rootDirectory)
+function watcher.remove_all_watchers_for_directory(rootDirectory)
 	local uv = vim.uv;
-	if events.watching[rootDirectory] == nil then
+	if watcher.watching[rootDirectory] == nil then
 		return
 	end
 
-	for dir, handle_event in pairs(events.watching[rootDirectory]) do
+	for dir, handle_event in pairs(watcher.watching[rootDirectory]) do
 		uv.fs_event_stop(handle_event, handle_event)
-		events.watching[rootDirectory][dir] = nil
+		watcher.watching[rootDirectory][dir] = nil
 	end
 end
 
-function events.watch_directory_for_changes(directory, excluded_directories)
-	if events.watching[directory] ~= nil then
-		return
+function watcher.watch_directory(directory)
+	if
+		watcher.watching[directory] ~= nil
+		or (sftp.server_config[sftp.get_current_server(directory)] or sftp.server_config[sftp.get_current_server(directory)] == 'none')
+		or (sftp.server_config[sftp.get_current_server(directory)]["watch_for_changes"] or sftp.server_config[sftp.get_current_server(directory)]['watch_for_changes'] == false)
+	then
+		return false
 	end
+
+	local excluded = sftp.server_config[sftp.get_current_server(directory)]['exclude_watch_directories'] or {}
 
 	local command
 	if isWindows() then
@@ -126,37 +112,34 @@ function events.watch_directory_for_changes(directory, excluded_directories)
 		recursive = true -- true = watch dirs inside dirs
 	}
 
-	local uv = vim.uv;
-	local p = io.popen(command)
+	local uv, p = vim.uv, io.popen(command)
 
-	if p == nil then
-		return
-	end
+	if not p then return false end
 
 	for dir in p:lines() do
 		-- Skip excluded directories
-		if isExcludedDirectory(dir, excluded_directories) then
+		if isExcludedDirectory(dir, excluded) then
 			goto continue
 		end
 
 		local handle_event = uv.new_fs_event()
-		if events.watching[dir] ~= nil then
+		if watcher.watching[dir] ~= nil then
 			uv.fs_event_stop(handle_event, handle_event)
 		end
 
-		local callback = function(err, filename, events)
+		local callback = function(err, filename)
 			if err then
 				remove_watch(dir, handle_event)
 			else
-				on_change(dir .. "/" .. filename, directory, excluded_directories)
+				on_change(dir .. "/" .. filename, directory, excluded)
 			end
 		end
 
 		uv.fs_event_start(handle_event, dir, flags, callback)
 
-		events.watching[directory] = events.watching[directory] or {}
+		watcher.watching[directory] = watcher.watching[directory] or {}
 
-		events.watching[directory][dir] = handle_event
+		watcher.watching[directory][dir] = handle_event
 
 		::continue::
 	end
@@ -164,4 +147,4 @@ function events.watch_directory_for_changes(directory, excluded_directories)
 	p:close()
 end
 
-return events
+return watcher
