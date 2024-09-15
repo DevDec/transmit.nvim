@@ -1,4 +1,5 @@
 local sftp = require('transmit.sftp')
+local queue = require('transmit.queue')
 local util = {}
 
 -- function util.create_directory(path, working_dir)
@@ -29,24 +30,24 @@ function util.remove_path(path, working_dir)
 
     local remove_processes = sftp.generate_remove_proceses(path, working_dir)
 
-    sftp.add_to_queue("remove", path, working_dir, remove_processes)
+    queue.add_to_queue("remove", path, working_dir, remove_processes)
 end
 
 function util.upload_file(file, working_dir)
-    if file == nil then
+    if not file then
         file = vim.api.nvim_buf_get_name(0)
     end
 
-    if working_dir == nil then
+    if not working_dir then
         working_dir = vim.loop.cwd()
     end
 
-    if sftp.working_dir_has_active_sftp_selection(working_dir) == false then
+    if not sftp.working_dir_has_active_sftp_selection(working_dir) then
         return false
     end
 
     local upload_processes = sftp.generate_upload_proceses(file, working_dir)
-    sftp.add_to_queue("upload", file, working_dir, upload_processes)
+    queue.add_to_queue("upload", file, working_dir, upload_processes)
 end
 
 return util
