@@ -1,11 +1,7 @@
----@module 'transmit.sftp'
-
 local data_path = vim.fn.stdpath("data")
 local Path = require("plenary.path")
 local queue = require('transmit.sftp-queue')
 
----@class sftp
----@field server_config table
 local sftp = {
 	server_config = {}
 }
@@ -50,7 +46,7 @@ function sftp.parse_sftp_config(config_location)
 end
 
 function sftp.get_sftp_server_config()
-    local selected_server = get_selected_server()
+    local selected_server = sftp.get_selected_server()
 
 	if not selected_server then return false end
 
@@ -75,116 +71,29 @@ function sftp.update_transmit_server_config(server_name, remote)
     Path:new(transmit_server_data):write(vim.json.encode(current_transmit_data), "w")
 end
 
-local function process_next_queue_item(chanid, data)
-    local current_queue_item = queue.get_current_queue_item()
+local function on_sftp_event(chanid, data, event)
+	local queue_item = queue.get_current_queue_item()
 
-	if not current_queue_item then return false end
-
-	if not queue then
-		vim.fn.chanclose(chanid)
-
-		if data == 0 then vim.print('Sftp process finished.') end
-
-		return true
+	if event == "exit" then
+		return
 	end
 
-	if not current_queue_item then
-		queue = {}
-		vim.fn.chansend(chanid, 'exit\n')
+	if not queue_item then
+		vim.fn.chansend(chanid, "exit\n")
 	end
 
-    for _,v in pairs(data) do
-        if not v then goto continue end
+	if queue_item.finished_response and string.find(data, queue_item.finished_response) then
+		local next_process = queue.get_next_queue_process()
 
-        local current_config = sftp.get_sftp_server_config()
+		if not next_process then
+			vim.fn.chansend(chanid, "exit\n")
+			return
+		end
 
-		if not current_config then return false end
+		vim.fn.chansend(chanid, next_process.process)
+		return
+	end
 
-        if current_queue_item.type == "connect" and string.find(v, 'lftp ' .. current_config.credentials.username .. '@' .. current_config.credentials.host .. ':~>') then
-            local next_queue_process = queue.get_next_queue_process()
-
-			if not next_queue_process then return false end
-
-            vim.print("Connected to server: " .. current_config.credentials.host)
-            vim.fn.chansend(chanid, next_queue_process["process"])
-            return true
-        end
-
-        local next_queue_process = queue.get_next_queue_process()
-
-        if not next_queue_process then
-            queue = {}
-            vim.fn.chansend(chanid, 'exit\n')
-            return false
-        end
-
-        if v ~= nil and (next_queue_process["status"] == true and string.find(v, next_queue_process["finished_response"]) or (next_queue_process["forceFinished"])) then
-            queue.reset_current_process()
-            next_queue_process = queue.get_next_queue_process()
-
-            if not next_queue_process then
-                queue = {}
-                vim.fn.chansend(chanid, 'exit\n')
-                return false
-            end
-
-            vim.fn.chansend(chanid, next_queue_process["process"])
-            return true
-        end
-
-        if next_queue_process["status"] == false and string.find(v, next_queue_process["success_response"]) then
-            if current_queue_item["type"] == "upload" and string.find(next_queue_process["process"], "put") then
-                vim.print("Uploading file: " .. current_queue_item["filename"] .. " succeeded.")
-            end
-
-            if current_queue_item["type"] == "remove" and string.find(next_queue_process["process"], "rm") then
-                vim.print("Removing file: " .. current_queue_item["filename"] .. " succeeded.")
-            end
-
-            queue.update_current_process_status(true)
-        elseif next_queue_process["status"] == false and string.find(v, next_queue_process["finished_response"]) then
-            if current_queue_item["type"] == "upload" and string.find(next_queue_process["process"], "put") then
-                vim.print("Uploading file: " .. current_queue_item["filename"] .. " succeeded.")
-            end
-
-			if current_queue_item["type"] == "remove" and string.find(next_queue_process["process"], "rm") then
-				vim.print("Removing file: " .. current_queue_item["filename"] .. " succeeded.")
-			end
-
-            queue.reset_current_process()
-            next_queue_process = queue.get_next_queue_process()
-
-            if not next_queue_process then
-                queue = {}
-                vim.fn.chansend(chanid, 'exit\n')
-                return false
-            end
-
-            vim.fn.chansend(chanid, next_queue_process["process"])
-            return true
-        else
-            for _, failed_response_value in pairs(next_queue_process["failed_responses"]) do
-                if string.find(v, failed_response_value) then
-                    if next_queue_process["accepts_failures"] == false then
-                        if current_queue_item["type"] == "upload" then
-                            vim.print("Uploading file: " .. current_queue_item["filename"] .. " failed with response: " .. v)
-                        end
-
-                        queue.update_current_process_status(true, true)
-                        goto continue
-                    end
-
-                    queue.update_current_process_status(true, true)
-                end
-            end
-        end
-
-        ::continue::
-    end
-end
-
-local function on_sftp_event(chanid, data)
-    process_next_queue_item(chanid, data)
 end
 
 local function escapePattern(str)
@@ -254,19 +163,19 @@ function sftp.generate_connect_proceses(working_dir)
 
     local selected_remote = current_transmit_data[working_dir]['remote']
     local remote_path = current_config['remotes'][selected_remote]
-
-    local change_directory = "cd " .. remote_path .. " \n"
+	local change_directory = "cd " .. remote_path ..  "\n pwd\n"
 
     return {
+		{
+			finished_response = 'Connected to ' .. current_config.credentials.host,
+		},
         {
             process = change_directory,
-            success_response = 'cd ok, cwd=/' .. remote_path,
-            finished_response = 'lftp ' .. current_config.credentials.username .. '@' .. current_config.credentials.host .. ':/' .. remote_path,
+            finished_response = remote_path,
             failed_responses = {
-                'Failure'
-            },
-            status = false,
-            accepts_failures = true
+                'Failure',
+				'No such file or directory'
+            }
         },
     }
 end
@@ -302,8 +211,6 @@ function sftp.generate_remove_proceses(path, working_dir)
     }
 end
 
-
-
 function sftp.start_connection()
     local config = sftp.get_sftp_server_config()
 
@@ -311,17 +218,16 @@ function sftp.start_connection()
 
     local host = config.credentials.host
     local username = config.credentials.username
-    local identity_file = config.credentials.identity_file
 
     return vim.fn.jobstart(
         {
-        "lftp",
-        "sftp://" .. username .. "@" .. host,
-        "-u", username .. ",",
-        "-e", "set sftp:connect-program \"ssh -i " .. identity_file .. "\"",
+			"sftp",
+			username .. "@" .. host
         },
         {
-            pty = true,
+            pty = false,
+			stdout_buffered = false,
+			stderr_buffered = false,
             on_stdout = on_sftp_event,
             on_stderr = on_sftp_event,
             on_exit = on_sftp_event,

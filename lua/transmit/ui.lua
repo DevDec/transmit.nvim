@@ -3,7 +3,7 @@ local sftp = require('transmit.sftp')
 
 local ui, closing_keys = {}, {'<Esc>'}
 
-local function select_remote(server_name)
+function ui.select_remote(server_name)
     local remote_index = vim.fn.line(".")
     local remotes = {}
 
@@ -31,7 +31,7 @@ local function select_remote(server_name)
 end
 
 
-local function select_server()
+ function ui.select_server()
     local idx = vim.fn.line(".")
     local new_buf = vim.api.nvim_create_buf(false, true)
 
@@ -84,7 +84,7 @@ local function select_server()
 
     -- Create the nested floating window inside the main floating window
     vim.api.nvim_open_win(new_buf, true, new_opts)
-    vim.api.nvim_buf_set_keymap(new_buf, 'n', '<CR>', select_remote(sftp_servers[idx]), {})
+    vim.api.nvim_buf_set_keymap(new_buf, 'n', '<CR>', ':lua require("transmit.ui").select_remote("' .. sftp_servers[idx] .. '")<CR>', {})
   end
 
 
@@ -127,7 +127,7 @@ function ui.open_select_window()
     vim.api.nvim_buf_set_option(buf, 'modifiable', false)
 
     vim.api.nvim_open_win(buf, 1, opts)
-    vim.api.nvim_buf_set_keymap(buf, 'n', '<CR>', select_server(), {})
+    vim.api.nvim_buf_set_keymap(buf, 'n', '<CR>', ':lua require("transmit.ui").select_server()<CR>', {})
 
     for _,v in pairs(closing_keys) do
         vim.api.nvim_buf_set_keymap(buf, 'n', v, ':close<CR>', {})

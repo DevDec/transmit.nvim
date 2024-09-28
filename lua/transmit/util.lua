@@ -1,5 +1,5 @@
 local sftp = require('transmit.sftp')
-local queue = require('transmit.queue')
+local queue = require('transmit.sftp-queue')
 local util = {}
 
 -- function util.create_directory(path, working_dir)

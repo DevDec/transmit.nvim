@@ -91,8 +91,8 @@ end
 function watcher.watch_directory(directory)
 	if
 		watcher.watching[directory] ~= nil
-		or (sftp.server_config[sftp.get_current_server(directory)] or sftp.server_config[sftp.get_current_server(directory)] == 'none')
-		or (sftp.server_config[sftp.get_current_server(directory)]["watch_for_changes"] or sftp.server_config[sftp.get_current_server(directory)]['watch_for_changes'] == false)
+		or (not sftp.server_config[sftp.get_current_server(directory)] or sftp.server_config[sftp.get_current_server(directory)] == 'none')
+		or (not sftp.server_config[sftp.get_current_server(directory)]['watch_for_changes'])
 	then
 		return false
 	end
