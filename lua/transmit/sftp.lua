@@ -377,7 +377,6 @@ function sftp.generate_remove_proceses(path, working_dir)
     local selected_remote = current_transmit_data[working_dir]['remote']
     local remote_path = current_config['remotes'][selected_remote]
 
-
 	local relative_path =  string.gsub(path, escapePattern(working_dir), '')
 
     if string.sub(relative_path, 1, 1) == '/' then
@@ -459,6 +458,15 @@ function sftp.working_dir_has_active_sftp_selection(working_dir)
     end
 
     return true
+end
+
+function sftp.get_current_remote(working_dir)
+    if sftp.working_dir_has_active_sftp_selection(working_dir) == false then
+        return 'none'
+    end
+
+    local current_transmit_data = get_transmit_data()
+    return current_transmit_data[working_dir]["remote"]
 end
 
 function sftp.get_current_server(working_dir)

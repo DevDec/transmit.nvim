@@ -89,6 +89,10 @@ function transmit.get_current_server()
     return sftp.get_current_server(vim.loop.cwd())
 end
 
+function transmit.get_current_remote()
+    return sftp.get_current_remote(vim.loop.cwd())
+end
+
 function transmit.get_server(directory)
 	return sftp.get_current_server(directory)
 end
